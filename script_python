@@ -1,0 +1,59 @@
+from datetime import datetime as dt
+import mygeotab
+import pandas as pd
+api = mygeotab.API(username='username', password='password', database='database')
+api.authenticate()
+
+def key_func(x,key):
+
+    try:
+        return(x[key])
+    except:
+        return(x)
+    
+dev_status=api.get('DeviceStatusInfo')
+dev_status=pd.DataFrame(dev_status)
+#dev_status.reset_index(inplace=True)
+placas={'id': 'b246'},{'id': 'b1FE'},{'id': 'b507'}
+eje=dev_status[dev_status.device.isin(placas)]
+
+eje=eje[['latitude','longitude','device']]
+
+eje.device = eje.device.apply(lambda x:key_func(x,"id"))
+
+devices=api.get('Device')
+devices=pd.DataFrame(devices)
+devices=devices[devices.activeTo>dt.strftime(dt.now(),'%Y-%m-%d')]
+#devices.columns.values
+
+devices=devices[['id','name']]
+#devices.reset_index(inplace=True)
+devices.rename(columns={'id':'device', 'name':'Placa'},inplace=True)
+resumen=eje.merge(devices,how="left",on='device')
+resumen
+from dateutil import tz
+
+import sidetable
+
+utc = tz.tzutc()
+local = tz.tzlocal()
+
+#inicio0=dt.utcnow()-pd.Timedelta(days=2)
+inicio0="2022-10-01T00:00:00.000Z"
+#inicio0 = dt(inicio0.year,inicio0.month,inicio0.day,0,0,0,tzinfo=utc)
+
+inicio = dt.utcnow()
+
+#Descarga de información de viajes
+tript=pd.DataFrame(api.get('Trip',
+       search={
+           'fromDate':  inicio0,
+           #'fromDate':  max(fechas3).astimezone(utc),
+           'toDate': inicio
+       }))
+
+tript.device = tript.device.apply(lambda x:key_func(x,"id"))
+
+tript = tript.merge(eje,how="right",on='device')
+tript=tript[['device','id','averageSpeed','distance','drivingDuration','idlingDuration','start','stop', 'stopDuration',]]
+tript
