@@ -1,0 +1,125 @@
+import pandas as pd
+
+from datetime import datetime
+
+import numpy as np
+
+remesas=pd.read_excel(r'C:\Users\jacostae\Renting Colombia S.A\Gerencia de Estructuración Logística Tempo - Documentos Guia\TIL\Indicadores\6. Seguimiento recaudo TF\Remesas.xlsx',sheet_name='Sheet1')
+
+remesas=remesas.sort_values(by=['FECHAHORA_DESPACHO'],ascending=[False])
+
+remesas=(remesas[(remesas.ESTADO_OPERATIVO_REMESA!= 'ANULADO') & (remesas.ESTADO_VIAJE!= None)])
+
+remesas.reset_index(inplace=True)
+
+remesas['Indice']=remesas.index
+
+import pandas as pd
+
+df = pd.read_excel(r'C:\Users\jacostae\Renting Colombia S.A\Gerencia de Estructuración Logística Tempo - Documentos Guia\TIL\Indicadores\6. Seguimiento recaudo TF\Base coordenadas.xlsx')
+
+df.rename(columns={'MUNICIPIO':'DESTINO'},inplace=True)
+
+remesas_agrupado=pd.DataFrame(remesas.groupby('PLACA')['Indice'].min())
+
+remesas_resumen=remesas.merge(remesas_agrupado,how="right")
+
+remesas_resumen=df.merge(remesas_resumen,how="right")
+
+remesas_resumen=remesas_resumen[['PLACA','ORIGEN','LATITUD','LONGITUD','CUMPLIDO','DESTINO','CLIENTE','DEPARTAMENTO']]
+
+from datetime import datetime as dt
+import mygeotab
+import pandas as pd
+api = mygeotab.API(username='jacostae@rentingcolombia.com', password='Ana12345', database='transportempo')
+api.authenticate()
+
+#Función para extraer resultados de la estructura del diccionario
+def key_func(x,key):
+    try:
+        return(x[key])
+    except:
+        return(x)
+
+#Descargamos información de estado de la flota, traemos, id_placa, latitud y longitud.     
+status=api.get('DeviceStatusInfo')
+status=pd.DataFrame(status)
+status=status[['latitude','longitude','device']]
+status.device = status.device.apply(lambda x:key_func(x,"id"))
+
+#Descargamos información de flota activa en geotab: id y placa
+devices=api.get('Device')
+devices=pd.DataFrame(devices)
+devices=devices[devices.activeTo>dt.strftime(dt.now(),'%Y-%m-%d')]
+devices=devices[['id','licensePlate']]
+devices.rename(columns={'licensePlate':'PLACA', 'id':'device'},inplace=True)
+
+#Unimos la tabla de status y devices para tener por placa la información de latitud y longitud
+status_ok = status.merge(devices,how="right")
+
+status_ok['PLACA']=status_ok['PLACA'].str.upper()
+
+status_ok=status_ok[['PLACA','latitude','longitude']]
+
+remesas_resumen=status_ok.merge(remesas_resumen,how="right")
+
+remesas_resumen.rename(columns={'latitude':'LATITUD_O', 'longitude':'LONGITUD_O','LATITUD':'LATITUD_D','LONGITUD':'LONGITUD_D'},inplace=True)
+
+#remesas_resumen=remesas_resumen[['PLACA','ORIGEN','LATITUD_O','LONGITUD_O','DESTINO','LATITUD_D','LONGITUD_D','CUMPLIDO']].astype(str)
+
+remesas_resumen=remesas_resumen[['PLACA','ORIGEN','LATITUD_O','LONGITUD_O','DESTINO','LATITUD_D','LONGITUD_D','CUMPLIDO','DEPARTAMENTO']]
+
+PLACAS = pd.DataFrame()
+
+PLACAS['PLACA']=['FXY314','GKV420','GVV043','JUO034','JUO036','KNZ740','KNZ750','KNZ760','KNZ770','KPP130''KPP138','KSK026','KSK083','KSK084','KSK087','KSK096','KSK105','KSK109','KSK116','KSK125''KSK129','KSK130','KSK132','KSK133','KSK206','KSP177','KSP182','KSP185','LGU585','LGU588','LGU589','TRN058','KSQ122','KSK125']
+
+remesas_resumen=remesas_resumen.merge(PLACAS,how="right")
+
+import googlemaps
+from datetime import datetime
+import pandas as pd
+from pandas.io.json import json_normalize
+
+now = datetime.now()
+gmaps = googlemaps.Client(key='AIzaSyBgwmAPcp3Azq7Ss5kcYxH-5C7Sn66lcDA')
+#gmaps = googlemaps.Client(key='AIzaSyBgwmAPcp3Azq7Ss5kcYxH-5C7Sn66lcDA')'AIzaSyDsKkGGa-VraBvHa33LvPXu08Jw09-305o'
+origenes = []
+destinos = []
+Matrix_resumen=[]
+distancia=[]
+duracion=[]
+direccion_actual=[]
+Matrix_resumen=pd.DataFrame(Matrix_resumen)
+placas=[]
+for i in range (0,40):
+    
+#origins = (journeydf['Start Latitude'][i], journeydf['Start Longitude'][i])
+#destinations = (journeydf['End Latitude'][i], journeydf['End Longitude'][i])
+    try: 
+    
+        origenes=(remesas_resumen['LATITUD_O'][i],remesas_resumen['LONGITUD_O'][i])
+        destinos=(remesas_resumen['LATITUD_D'][i],remesas_resumen['LONGITUD_D'][i])
+
+        #matrix = gmaps.directions(origenes,destinos,mode="driving")
+        matrix = gmaps.directions(origenes,destinos,mode="driving",departure_time=datetime.now())
+    
+        #duracion = matrix['Directions']['Duration']['seconds']
+        duracion.append({matrix[0]['legs'][0]['duration']['value']/3600})
+        distancia.append({matrix[0]['legs'][0]['distance']['value']/1000})
+        direccion_actual.append({matrix[0]['legs'][0]['start_address']})
+        placas.append(remesas_resumen["PLACA"][i])
+    except:
+        
+        pass
+    
+    #print(matrix[0]['legs'][0]['distance']['value']/1000)
+    #print(matrix[0]['legs'][0]['duration']['value']/3600)
+    
+        
+Matrix_resumen['distancia']=pd.DataFrame(distancia)
+Matrix_resumen['duracion']=pd.DataFrame(duracion)
+Matrix_resumen['PLACA']=pd.DataFrame(placas)
+#Matrix_resumen['Origen']=remesas_resumen['ORIGEN']
+#Matrix_resumen['Destino']=remesas_resumen['DESTINO']
+Matrix_resumen['Direccion actual']=pd.DataFrame(direccion_actual)
+Matrix_resumen=Matrix_resumen.merge(remesas_resumen[["PLACA","ORIGEN","DESTINO","LATITUD_O","LONGITUD_O","LATITUD_D","LONGITUD_D","CUMPLIDO","DEPARTAMENTO"]].drop_duplicates(),on="PLACA")
